@@ -216,6 +216,37 @@ public class OrderService
 
 ---
 
+## Changelog
+[v1.0.2] - 2025-08-22
+
+### Added
+
+•Validation Integration
+
+•Introduced UseValidation() extension method for automatic registration of DataAnnotations and FluentValidation validators by convention.
+
+•Validators are discovered and registered from all application assemblies, supporting both attribute-based and FluentValidation rules.
+
+•Endpoints now automatically validate complex parameters using registered validators, returning 400 Bad Request with error details on validation failure.
+
+### Changed
+
+•OpenAPI Improvements
+
+•Enhanced endpoint metadata generation for OpenAPI/Swagger, including improved parameter documentation and request/response schemas.
+
+•Added support for complex query parameters and improved handling of required properties.
+
+•Endpoint Discovery & Mapping
+
+•Improved endpoint discovery and mapping logic for automatic registration of service methods as HTTP endpoints.
+
+•Added support for async service methods and proper response handling.
+
+•Dependency Injection
+
+•Improved auto-registration of services and validators with configurable lifetimes.
+
 ## License
 
 MIT

@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿using FluentValidation;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi.Models;
@@ -14,6 +15,7 @@ namespace RapidStack.AutoEndpoint;
 // Extension methods for easy integration
 public static class AutoEndpointExtensions
 {
+    private static bool _validationEnabled = false;
     public static IServiceCollection AddAutoEndpoints(this IServiceCollection services)
     {
         services.AddSingleton<AutoEndpointDiscovery>();
@@ -209,7 +211,6 @@ public static class AutoEndpointExtensions
         return !param.HasDefaultValue && !Helpers.IsNullableType(param.ParameterType);
     }
 
-
     private static bool HasRequiredProperties(Type type)
     {
         // Skip primitives (int, string, bool, etc.)
@@ -222,7 +223,6 @@ public static class AutoEndpointExtensions
                 p.CustomAttributes.Any(attr => attr.AttributeType.Name == "RequiredMemberAttribute")
             );
     }
-
 
     private static ParameterLocation DetermineParameterLocation(string paramName, string route)
     {
@@ -276,6 +276,21 @@ public static class AutoEndpointExtensions
 
             // Prepare method parameters
             var parameters = await PrepareParameters(context, endpointInfo.Method);
+
+            // Validate complex parameters generically
+            var methodParams = endpointInfo.Method.GetParameters();
+            for (int i = 0; i < methodParams.Length; i++)
+            {
+                var param = methodParams[i];
+                if (!Helpers.IsSimpleType(param.ParameterType) && !Helpers.IsSpecialType(param.ParameterType))
+                {
+                    var errors = ValidateObject(parameters[i], context.RequestServices);
+                    if (errors.Count > 0)
+                    {
+                        return Results.BadRequest(new { Errors = errors });
+                    }
+                }
+            }
 
             // Invoke method
             var result = endpointInfo.Method.Invoke(service, parameters);
@@ -508,6 +523,77 @@ public static class AutoEndpointExtensions
 
         return instance;
     }
+    #region Validation
+    public static IServiceCollection UseValidation(this IServiceCollection services,
+        ServiceLifetime lifetime = ServiceLifetime.Scoped)
+    {
+        _validationEnabled = true;
+        RegisterValidatorsByConvention(services, lifetime);
+        return services;
+    }
 
-    
+    private static bool IsApplicationAssembly(Assembly assembly)
+    {
+        var name = assembly.GetName().Name;
+        return name != null &&
+               !name.StartsWith("System.") &&
+               !name.StartsWith("Microsoft.") &&
+               !name.StartsWith("netstandard");
+    }
+    private static void RegisterValidatorsByConvention(IServiceCollection services, ServiceLifetime lifetime)
+    {
+        var assemblies = AppDomain.CurrentDomain.GetAssemblies()
+            .Where(a => !a.IsDynamic
+                        && !string.IsNullOrWhiteSpace(a.Location)
+                        && IsApplicationAssembly(a));
+
+        foreach (var assembly in assemblies)
+        {
+            try
+            {
+                var validatorTypes = assembly.GetTypes()
+                    .Where(t => !t.IsAbstract && !t.IsInterface)
+                    .SelectMany(t => t.GetInterfaces()
+                        .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IValidator<>))
+                        .Select(i => new { ValidatorType = t, ServiceType = i }));
+
+                foreach (var vt in validatorTypes)
+                {
+                    services.Add(new ServiceDescriptor(vt.ServiceType, vt.ValidatorType, lifetime));
+                }
+            }
+            catch (ReflectionTypeLoadException) { /* Skip problematic assemblies */ }
+        }
+
+    }
+
+    private static List<string> ValidateObject(object obj, IServiceProvider services)
+    {
+        var errors = new List<string>();
+        if (obj == null || !_validationEnabled) return errors;
+
+        // Data Annotations
+        var context = new ValidationContext(obj, services, null);
+        var results = new List<ValidationResult>();
+        if (!Validator.TryValidateObject(obj, context, results, true))
+        {
+            errors.AddRange(results.Select(r => r.ErrorMessage));
+        }
+
+        // FluentValidation (if registered)
+        var validatorType = typeof(IValidator<>).MakeGenericType(obj.GetType());
+        var validator = services.GetService(validatorType) as IValidator;
+        if (validator != null)
+        {
+            var validationResult = validator.Validate(new ValidationContext<object>(obj));
+            if (!validationResult.IsValid)
+            {
+                errors.AddRange(validationResult.Errors.Select(e => e.ErrorMessage));
+            }
+        }
+
+        return errors;
+    }
+    #endregion
+
 }

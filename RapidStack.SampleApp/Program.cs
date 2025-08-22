@@ -11,7 +11,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddAutoEndpointsSwagger();
+builder.Services
+    .AddAutoEndpointsSwagger()
+    .UseValidation();
+
 builder.Services.AddScoped<UserService>(); // Register your services
 
 // 👇 Auto DI from current assembly

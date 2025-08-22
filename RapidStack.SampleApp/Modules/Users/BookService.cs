@@ -1,19 +1,43 @@
-﻿using RapidStack.AutoDI;
+﻿using FluentValidation;
+using RapidStack.AutoDI;
 using RapidStack.AutoEndpoint.Attributes;
+using System.ComponentModel.DataAnnotations;
 
 namespace RapidStack.SampleApp.Modules.Users;
 
 
 // DTOs
 public record BookDto(Guid Id, string Title, string Author, DateTime PublishedDate);
-public record CreateBookDto(string Title, string Author, DateTime PublishedDate);
+public class CreateBookDto
+{
+    public CreateBookDto(string title, string author, DateTime publishedDate)
+    {
+        Title = title;
+        Author = author;
+        PublishedDate = publishedDate;
+    }
+
+    [Required]
+    [StringLength(100)]
+    public string Title { get; set; }
+
+    [Required]
+    [StringLength(100)]
+    public string Author { get; set; }
+
+    [Required]
+    public DateTime PublishedDate { get; set; }
+}
 public record UpdateBookDto(string Title, string Author, DateTime PublishedDate);
+
+// Query Parameters
 public class BookQueryParam
 {
     public string Title { get; set; }
     public string Name { get; set; } = string.Empty;
     public int? Level { get; set; }
 }
+
 // Service
 [AutoEndpoint("api/books")]
 [Injectable(ServiceLifetime.Scoped)]
@@ -43,5 +67,23 @@ public class BookService
     public void Delete(Guid id)
     {
         // Delete logic here
+    }
+}
+
+//Validatiors
+public class UpdateBookDtoValidator : AbstractValidator<UpdateBookDto>
+{
+    public UpdateBookDtoValidator()
+    {
+        RuleFor(x => x.Title)
+            .NotEmpty()
+            .MaximumLength(100);
+
+        RuleFor(x => x.Author)
+            .NotEmpty()
+            .MaximumLength(100);
+
+        RuleFor(x => x.PublishedDate)
+            .NotEmpty();
     }
 }
